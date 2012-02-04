@@ -1,7 +1,7 @@
 Longtask for Long running tasks
 ===============================
 
-Many things take longer than a user is willing to wait. AppEngine with it's request deadline of 10s (later lifted to 30s and then to 60s) is also not willing to wait very long. `longtask` encapsulates a pattern to do the actual work in a taskqueue while providing users with updates (and finally the results) via self reloading webpages.
+Many things take longer than a user is willing to wait. See [this Blogposting][1] for firther references. AppEngine with it's request deadline of 10s (later lifted to 30s and then to 60s) is also not willing to wait very long. `longtask` encapsulates a pattern to do the actual work in a taskqueue while providing users with updates (and finally the results) via self reloading webpages.
 Per default this is limited to tasks running not more than 10 minutes but with the use of backends this can be incerased to nearly unlimited runtime.
 
 Usage is extremely simple:
@@ -16,3 +16,27 @@ Usage is extremely simple:
             return "<html><body>Done!</body></html>"
 
 Thats basically all you need.
+
+
+Installation
+------------
+
+I strongly suggest to create a `./lib/` directory within your AppEngine application and put `gae_longtask` there.
+
+
+    mkdir -p lib
+    git sublodule add git://github.com/mdornseif/gaetk_longtask.git lib/gaetk_longtask
+    echo "import os.path" > lib/__init__.py
+    echo "import site" >> lib/__init__.py
+    echo "site.addsitedir(os.path.dirname(__file__))" >> lib/__init__.py
+    echo "./approcket" >> lib/submodules.pth
+
+Now within your application first `import lib` to initialize the library directory, then `import longtask`.
+
+
+See also
+--------
+
+* [Long running Tasks for Websites][1]
+
+[1]: http://mdornseif.github.com/2012/02/04/long_tasks.html
