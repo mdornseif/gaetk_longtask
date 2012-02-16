@@ -29,7 +29,7 @@ I strongly suggest to create a `./lib/` directory within your AppEngine applicat
     echo "import os.path" > lib/__init__.py
     echo "import site" >> lib/__init__.py
     echo "site.addsitedir(os.path.dirname(__file__))" >> lib/__init__.py
-    echo "./approcket" >> lib/submodules.pth
+    echo "./gaetk_longtask" >> lib/submodules.pth
 
 Now within your application first `import lib` to initialize the library directory, then `import longtask`.
 
