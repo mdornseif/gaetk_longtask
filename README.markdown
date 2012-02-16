@@ -25,7 +25,7 @@ I strongly suggest to create a `./lib/` directory within your AppEngine applicat
 
 
     mkdir -p lib
-    git sublodule add git://github.com/mdornseif/gaetk_longtask.git lib/gaetk_longtask
+    git submodule add git://github.com/mdornseif/gaetk_longtask.git lib/gaetk_longtask
     echo "import os.path" > lib/__init__.py
     echo "import site" >> lib/__init__.py
     echo "site.addsitedir(os.path.dirname(__file__))" >> lib/__init__.py
