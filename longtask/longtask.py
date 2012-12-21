@@ -37,28 +37,28 @@ import webapp2
 from webob.exc import HTTPTemporaryRedirect as HTTP307_TemporaryRedirect
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
-from google.appengine.ext import db
+from google.appengine.ext import ndb
 from urllib import urlencode
 
 
-class gaetk_LongTask(db.Model):
+class gaetk_LongTask(ndb.Model):
     """Represents a long running task."""
     # url-path to do statistic for common kinds of tasks
-    path = db.StringProperty()
-    parameters_blob = db.BlobProperty()
-    result_blob = db.BlobProperty()
-    status = db.StringProperty(required=True, default='ready',
-                               choices=['ready', 'started', 'error', 'done', 'finished'])
-    starttime = db.FloatProperty()  # Unix timestamp
-    endtime = db.FloatProperty()  # Unix timestamp
+    path = ndb.StringProperty()
+    parameters_blob = ndb.BlobProperty(compressed=True)
+    result_blob = ndb.BlobProperty(compressed=True)
+    status = ndb.StringProperty(default='ready',
+                                choices=['ready', 'started', 'error', 'done', 'finished'])
+    starttime = ndb.FloatProperty()  # Unix timestamp
+    endtime = ndb.FloatProperty()  # Unix timestamp
     # When was the result last accessed
-    last_accessed_at = db.DateTimeProperty(auto_now=True)
+    last_accessed_at = ndb.DateTimeProperty(auto_now=True)
     # Speichern wann und von wem der Datensatz angelegt und geändert wurde. Die Appengine füllt diese
     # Felder automatisch aus.
-    updated_at = db.DateTimeProperty(auto_now=True)
-    updated_by = db.UserProperty(required=False, auto_current_user=True)
-    created_at = db.DateTimeProperty(auto_now_add=True)
-    created_by = db.UserProperty(required=False, auto_current_user_add=True)
+    updated_at = ndb.DateTimeProperty(auto_now=True)
+    updated_by = ndb.UserProperty(required=False, auto_current_user=True)
+    created_at = ndb.DateTimeProperty(auto_now_add=True)
+    created_by = ndb.UserProperty(required=False, auto_current_user_add=True)
 
     def __repr__(self):
         return '<LongTask status=%r>' % self.status
@@ -97,7 +97,8 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         # The datastore entity is referenced by `_longtaskid`
         task = None
         if self.request.get('_longtaskid'):
-            task = gaetk_LongTask.get(self.request.get('_longtaskid', ''))
+            key = ndb.Key(urlsafe=self.request.get('_longtaskid', ''))
+            task = key.get()
         if task:
             self.task = task
             if self.request.get('_longtaskjob') == 'execute':
@@ -109,7 +110,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                 if task.status not in ['done', 'finished']:
                     raise RuntimeError("task %s is not 'done'", task)
                 task.last_accessed_at = datetime.datetime.now()
-                db.put_async(task)
+                task.put()
 
                 parameters = pickle.loads(task.parameters_blob)
                 result = pickle.loads(task.result_blob)
@@ -139,11 +140,11 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         self.task = task
         # Start TaskQueue
         taskqueue.add(url=self.request.path, method='GET',
-                  params={'_longtaskjob': 'execute', '_longtaskid': task.key()})
+                  params={'_longtaskjob': 'execute', '_longtaskid': task.key.urlsafe()})
         self.log_progress("Starting", step=0)
         # Redirect to status page
         parameters = urlencode([('_longtaskjob', 'query'),
-                                ('_longtaskid', task.key()),
+                                ('_longtaskid', task.key.urlsafe()),
                                 # Original URL to restart the Task
                                 ('_longtaskstartingpoint', self.request.url)]
                                 # original Parameters
@@ -161,7 +162,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             display['info'] = 'Fertig!'
             # Redirect to result page
             parameters = urlencode([('_longtaskjob', 'showresult'),
-                                    ('_longtaskid', task.key()),
+                                    ('_longtaskid', task.key.urlsafe()),
                                     ('_longtaskstartingpoint', self.request.url)]
                                     # original Parameters
                                    + [(name, self.request.get(name)) for name in self.request.arguments()
@@ -174,9 +175,10 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             display['info'] = u'Fehler, wird automatisch erneut versucht.'
         if task.status == 'started':
             # We are running. Read current Status Message from memcache and prepare for display
-            display['statusinfo'] = memcache.get("longtask_status_%s" % task.key())
+            display['statusinfo'] = memcache.get("longtask_status_%s" % task.key.urlsafe())
             if not display['statusinfo']:
                 display['statusinfo'] = {}
+            logging.info("%r", display['statusinfo'].get('message'))
             display['info'] = u'%s<br>Läuft seit %d Sekunden.' % (display['statusinfo'].get('message'),
                                                                   time.time() - task.starttime)
             # Display Progress Bar if sufficient data is available
@@ -217,7 +219,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         # anything messy.
         task.status = 'started'
         task.starttime = time.time()
-        db.put_async(task)
+        task.put()
         self.task = task
         logging.info("started %s", task)
 
@@ -226,7 +228,8 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         try:
             result = self.execute_task(parameters)
             logging.info("returned from execution %s", task)
-            task = gaetk_LongTask.get(self.request.get('_longtaskid'))
+            key = ndb.Key(urlsafe=self.request.get('_longtaskid', ''))
+            task = key.get()
             task.result_blob = pickle.dumps(result)
             task.status = 'done'
             task.endtime = time.time()
@@ -235,7 +238,8 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             # If an exception occured, note htat in the Datastore an re raise an error.
             # We could probably add one day some fancy error logging.
             logging.error(msg)
-            task = gaetk_LongTask.get(self.request.get('_longtaskid'))
+            key = ndb.Key(urlsafe=self.request.get('_longtaskid', ''))
+            task = key.get()
             task.status = 'error'
             task.put()
             raise
@@ -277,7 +281,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         """
         if not total_steps:
             total_steps = getattr(self, 'total_steps', 0)
-        memcache.set("longtask_status_%s" % self.task.key(),
-                     dict(message=message, step=step, total_steps=total_steps))
+        memcache.set("longtask_status_%s" % self.task.key.urlsafe(),
+                     dict(message=unicode(message), step=step, total_steps=total_steps))
 
 # TODO: garbage collection
