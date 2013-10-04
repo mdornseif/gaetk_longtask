@@ -1,7 +1,7 @@
 Longtask for Long running tasks
 ===============================
 
-Many things take longer than a user is willing to wait. See [this Blogposting][1] for firther references. AppEngine with it's request deadline of 10s (later lifted to 30s and then to 60s) is also not willing to wait very long. `longtask` encapsulates a pattern to do the actual work in a taskqueue while providing users with updates (and finally the results) via self reloading webpages.
+Many things take longer than a user is willing to wait. See [this Blogposting][1] for further references. AppEngine with it's request deadline of 10s (later lifted to 30s and then to 60s) is also not willing to wait very long. `longtask` encapsulates a pattern to do the actual work in a taskqueue while providing users with updates (and finally the results) via self reloading webpages.
 Per default this is limited to tasks running not more than 10 minutes but with the use of backends this can be incerased to nearly unlimited runtime.
 
 Usage is extremely simple:
