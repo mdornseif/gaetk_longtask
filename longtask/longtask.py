@@ -50,7 +50,7 @@ class gaetk_LongTask(ndb.Model):
     parameters_blob = ndb.BlobProperty(compressed=True)
     result_blob = ndb.BlobProperty(compressed=True)
     status = ndb.StringProperty(default='ready',
-                                choices=['ready', 'started', 'error', 'done', 'finished'])
+                                choices=['ready', 'started', 'error', 'done', 'showing', 'finished'])
     starttime = ndb.FloatProperty()  # Unix timestamp
     endtime = ndb.FloatProperty()  # Unix timestamp
     # When was the result last accessed
@@ -109,7 +109,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                 self.get_query(task)
             elif self.request.get('_longtaskjob') == 'showresult':
                 # We are called to display the result
-                if task.status not in ['done', 'finished']:
+                if task.status not in ['done', 'showing', 'finished']:
                     raise RuntimeError("task %s is not 'done'", task)
                 task.last_accessed_at = datetime.datetime.now()
                 task.put()
@@ -172,13 +172,19 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
     def get_query(self, task):
         """Return current Task Status or redirect to the result."""
         # Statustext - Generic Variant.
-        display = dict(info='Status: %s' % task.status)
+        display = dict(info='Status: %s' % task.status, refresh=3)
+
+        if task.status == 'showing':
+            # Redirect to result page
+            self._redirect(task, 'showresult')
 
         if task.status == 'done':
             # We are done!
-            display['info'] = 'Fertig!'
-            # Redirect to result page
-            self._redirect(task, 'showresult')
+            task.status = 'showing'
+            task.put()
+            display['info'] = 'Fertig! Wird angezeigt/heruntergeladen.'
+            display['info'] = display['info'] + u"<p><progress></progress></p>"
+            display['refresh'] = 0
 
         if task.status == 'ready':
             display['info'] = 'Warte auf Start.'
@@ -205,7 +211,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                 display['info'] = display['info'] + u"<p><progress></progress></p>"
 
         # Generate HTML output
-        html = u"""<html><head><meta http-equiv="refresh" content="3"><title>Task Status</title></head>
+        html = u"""<html><head><meta http-equiv="refresh" content="%(refresh)s"><title>Task Status</title></head>
 <body><p>%(info)s</p>
 </p></body></html>""" % display
         self.response.write(html)
