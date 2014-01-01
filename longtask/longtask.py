@@ -35,6 +35,7 @@ import time
 
 import webapp2
 from webob.exc import HTTPTemporaryRedirect as HTTP307_TemporaryRedirect
+from webob.exc import HTTPFound as HTTP302_Found
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.ext import ndb
@@ -45,6 +46,7 @@ class gaetk_LongTask(ndb.Model):
     """Represents a long running task."""
     # url-path to do statistic for common kinds of tasks
     path = ndb.StringProperty()
+    method = ndb.StringProperty(default='GET')
     parameters_blob = ndb.BlobProperty(compressed=True)
     result_blob = ndb.BlobProperty(compressed=True)
     status = ndb.StringProperty(default='ready',
@@ -134,7 +136,10 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
 
         # Start a new task
         paramters = self.prepare_task(*args, **kwargs)
-        task = gaetk_LongTask(parameters_blob=pickle.dumps(paramters), path=self.request.path, status='ready')
+        task = gaetk_LongTask(
+            method=self.request.method,
+            parameters_blob=pickle.dumps(paramters),
+            path=self.request.path, status='ready')
         task.put()
         logging.info("starting %s", task)
         self.task = task
@@ -143,14 +148,26 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                   params={'_longtaskjob': 'execute', '_longtaskid': task.key.urlsafe()})
         self.log_progress("Starting", step=0)
         # Redirect to status page
-        parameters = urlencode([('_longtaskjob', 'query'),
-                                ('_longtaskid', task.key.urlsafe()),
-                                # Original URL to restart the Task
-                                ('_longtaskstartingpoint', self.request.url)]
-                                # original Parameters
-                               + [(name, self.request.get(name)) for name in self.request.arguments()
-                                  if not name.startswith('_')])
-        raise HTTP307_TemporaryRedirect(location=self.request.path + '?' + parameters)
+        self._redirect(task, 'query')
+
+    def _redirect(self, task, typ):
+        logging.warn("redirect to %s", typ)
+        longtaskstartingpoint = self.request.get('_longtaskstartingpoint', self.request.url)
+        if task.method == 'PUT':
+            # happens usually with file uploads
+            parameters = urlencode([('_longtaskjob', typ),
+                                    ('_longtaskid', task.key.urlsafe()),
+                                   ])
+            raise HTTP302_Found(location=self.request.path + '?' + parameters)
+        else:
+            parameters = urlencode([('_longtaskjob', typ),
+                                    ('_longtaskid', task.key.urlsafe()),
+                                    # Original URL to restart the Task
+                                    ('_longtaskstartingpoint', longtaskstartingpoint)]
+                                    # original Parameters
+                                   + [(name, self.request.get(name)) for name in self.request.arguments()
+                                      if not name.startswith('_') and len(self.request.get(name)) < 512])
+            raise HTTP307_TemporaryRedirect(location=self.request.path + '?' + parameters)
 
     def get_query(self, task):
         """Return current Task Status or redirect to the result."""
@@ -161,13 +178,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             # We are done!
             display['info'] = 'Fertig!'
             # Redirect to result page
-            parameters = urlencode([('_longtaskjob', 'showresult'),
-                                    ('_longtaskid', task.key.urlsafe()),
-                                    ('_longtaskstartingpoint', self.request.url)]
-                                    # original Parameters
-                                   + [(name, self.request.get(name)) for name in self.request.arguments()
-                                      if not name.startswith('_')])
-            raise HTTP307_TemporaryRedirect(location=self.request.path + '?' + parameters)
+            self._redirect(task, 'showresult')
 
         if task.status == 'ready':
             display['info'] = 'Warte auf Start.'
@@ -245,6 +256,10 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             raise
 
         logging.info("finishing %s", task)
+
+    def post(self, *args, **kwargs):
+        """Allow firing of longtasks via POST requests."""
+        self.get(*args, **kwargs)
 
     def prepare_task(self):
         """Prepares a task to be started. Returnes a Dict of Data to be given to the Task."""
