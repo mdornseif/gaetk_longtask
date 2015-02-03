@@ -40,3 +40,7 @@ See also
 * [Long running Tasks for Websites][1]
 
 [1]: http://mdornseif.github.com/2012/02/04/long_tasks.html
+
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/mdornseif/gaetk_longtask/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
