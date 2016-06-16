@@ -34,12 +34,13 @@ import pickle
 import time
 
 import webapp2
-from webob.exc import HTTPTemporaryRedirect as HTTP307_TemporaryRedirect
-from webob.exc import HTTPFound as HTTP302_Found
+
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.ext import ndb
 from urllib import urlencode
+from webob.exc import HTTPFound as HTTP302_Found
+from webob.exc import HTTPTemporaryRedirect as HTTP307_TemporaryRedirect
 
 
 class gaetk_LongTask(ndb.Model):
@@ -145,7 +146,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         self.task = task
         # Start TaskQueue
         taskqueue.add(url=self.request.path, method='GET',
-                  params={'_longtaskjob': 'execute', '_longtaskid': task.key.urlsafe()})
+                      params={'_longtaskjob': 'execute', '_longtaskid': task.key.urlsafe()})
         self.log_progress("Starting", step=0)
         # Redirect to status page
         self._redirect(task, 'query')
@@ -157,14 +158,14 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             # happens usually with file uploads
             parameters = urlencode([('_longtaskjob', typ),
                                     ('_longtaskid', task.key.urlsafe()),
-                                   ])
+                                    ])
             raise HTTP302_Found(location=self.request.path + '?' + parameters)
         else:
             parameters = urlencode([('_longtaskjob', typ),
                                     ('_longtaskid', task.key.urlsafe()),
                                     # Original URL to restart the Task
                                     ('_longtaskstartingpoint', longtaskstartingpoint)]
-                                    # original Parameters
+                                   # original Parameters
                                    + [(name, self.request.get(name)) for name in self.request.arguments()
                                       if not name.startswith('_') and len(self.request.get(name)) < 512])
             raise HTTP307_TemporaryRedirect(location=self.request.path + '?' + parameters)
@@ -204,8 +205,8 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                 display['info'] = display['info'] + u"""<p>Fortgang:
   <progress value="%d" max="%d">%d %%</progress></p>
 """ % (display['statusinfo'].get('step'),
-      display['statusinfo'].get('total_steps'),
-      int(display['statusinfo'].get('step') * 100.0 / display['statusinfo'].get('total_steps')))
+                    display['statusinfo'].get('total_steps'),
+                    int(display['statusinfo'].get('step') * 100.0 / display['statusinfo'].get('total_steps')))
             else:
                 # indetermine progress bar
                 display['info'] = display['info'] + u"<p><progress></progress></p>"
@@ -273,7 +274,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         # This dict will be used to call `execute_task()`.
         # Overwreite `prepare_task()` if you need fancier preprocessing.
         parameters = dict([(name, self.request.get(name)) for name in self.request.arguments()
-                            if not name.startswith('_')])
+                           if not name.startswith('_')])
         return parameters
 
     def execute_task(self, parameters):
