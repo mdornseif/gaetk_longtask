@@ -120,7 +120,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                 task.status = 'finished'
                 task.put()
                 logging.info("showing result of %s", task)
-                self.display_result(parameters, result)
+                self.display_result(parameters, result, task)
         else:
             if self.request.get('_longtaskid'):
                 # Something went wrong, we couldn't find that Task in the datastore.
@@ -146,7 +146,7 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         self.task = task
         # Start TaskQueue
         taskqueue.add(url=self.request.path, method='GET',
-                      params={'_longtaskjob': 'execute', '_longtaskid': task.key.urlsafe()})
+                  params={'_longtaskjob': 'execute', '_longtaskid': task.key.urlsafe()})
         self.log_progress("Starting", step=0)
         # Redirect to status page
         self._redirect(task, 'query')
@@ -158,14 +158,14 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             # happens usually with file uploads
             parameters = urlencode([('_longtaskjob', typ),
                                     ('_longtaskid', task.key.urlsafe()),
-                                    ])
+                                   ])
             raise HTTP302_Found(location=self.request.path + '?' + parameters)
         else:
             parameters = urlencode([('_longtaskjob', typ),
                                     ('_longtaskid', task.key.urlsafe()),
                                     # Original URL to restart the Task
                                     ('_longtaskstartingpoint', longtaskstartingpoint)]
-                                   # original Parameters
+                                    # original Parameters
                                    + [(name, self.request.get(name)) for name in self.request.arguments()
                                       if not name.startswith('_') and len(self.request.get(name)) < 512])
             raise HTTP307_TemporaryRedirect(location=self.request.path + '?' + parameters)
@@ -180,9 +180,6 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
             self._redirect(task, 'showresult')
 
         if task.status == 'done':
-            # We are done!
-            task.status = 'showing'
-            task.put()
             display['info'] = 'Fertig! Wird angezeigt/heruntergeladen.'
             display['info'] = display['info'] + u"<p><progress></progress></p>"
             display['refresh'] = 0
@@ -205,17 +202,18 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
                 display['info'] = display['info'] + u"""<p>Fortgang:
   <progress value="%d" max="%d">%d %%</progress></p>
 """ % (display['statusinfo'].get('step'),
-                    display['statusinfo'].get('total_steps'),
-                    int(display['statusinfo'].get('step') * 100.0 / display['statusinfo'].get('total_steps')))
+      display['statusinfo'].get('total_steps'),
+      int(display['statusinfo'].get('step') * 100.0 / display['statusinfo'].get('total_steps')))
             else:
                 # indetermine progress bar
                 display['info'] = display['info'] + u"<p><progress></progress></p>"
 
-        # Generate HTML output
-        html = u"""<html><head><meta http-equiv="refresh" content="%(refresh)s"><title>Task Status</title></head>
-<body><p>%(info)s</p>
-</p></body></html>""" % display
-        self.response.write(html)
+        self.render_status(display, task)
+
+        if task.status == 'done':
+            # We are done!
+            task.status = 'showing'
+            task.put()
 
     def get_execute(self, task):
         """Handle calling of execute_task()."""
@@ -268,20 +266,30 @@ class LongRunningTaskHandler(webapp2.RequestHandler):
         """Allow firing of longtasks via POST requests."""
         self.get(*args, **kwargs)
 
-    def prepare_task(self):
+    def prepare_task(self, *args, **kwargs):
         """Prepares a task to be started. Returnes a Dict of Data to be given to the Task."""
         # move all HTTP-parameters not starting with `_` in the parameters dict.
         # This dict will be used to call `execute_task()`.
-        # Overwreite `prepare_task()` if you need fancier preprocessing.
+        # Overwrite `prepare_task()` if you need fancier preprocessing.
         parameters = dict([(name, self.request.get(name)) for name in self.request.arguments()
-                           if not name.startswith('_')])
+                            if not name.startswith('_')])
+        parameters.update(kwargs)
+        for i, arg in enumerate(args):
+            parameters["arg%d" % i] = arg
         return parameters
 
     def execute_task(self, parameters):
         """Is called to do the actual work."""
         raise NotImplementedError
 
-    def display_result(self, paramters, result):
+    def render_status(self, display, task):
+        # Generate HTML output
+        html = u"""<html><head><meta http-equiv="refresh" content="%(refresh)s"><title>Task Status</title></head>
+<body><p>%(info)s</p>
+</p></body></html>""" % display
+        self.response.write(html)
+
+    def display_result(self, paramters, result, task):
         """Is called after Task completion with the output of `execute_task()`"""
         # can be overwritten to do fancier output processing.
         self.response.out.write(result)

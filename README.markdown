@@ -8,7 +8,7 @@ Usage is extremely simple:
 
     class myTask(longtask.LongRunningTaskHandler):
         def execute_task(self, parameters):
-            self.log_progress("Starting", step=0, total_steps=5):
+            self.log_progress("Starting", step=0, total_steps=5)
             time.sleep(15)
             for x in range(5):
                 self.log_progress("Step %d" % (x + 1), step=(x + 1), total_steps=5)
